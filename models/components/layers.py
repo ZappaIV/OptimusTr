@@ -50,7 +50,7 @@ class DecoderLayer(nn.Module):
         self.norm2 = nn.LayerNorm(embed_dim)
         self.norm3 = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(0.1)
-        
+
     def forward(self, x, encoder_output, tgt_mask=None, src_mask=None):
         # Self-attention mascherata
         if isinstance(self.self_attention, MultiHeadAttention):
