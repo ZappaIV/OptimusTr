@@ -104,9 +104,11 @@ class FeedForward(nn.Module):
         self.linear1 = nn.Linear(embed_dim, d_ff)
         self.linear2 = nn.Linear(d_ff, embed_dim)
         self.dropout = nn.Dropout(0.1)
+        self.norm = nn.LayerNorm(embed_dim)
 
     def forward(self, x):
-        return self.linear2(self.dropout(F.relu(self.linear1(x))))
+        x = self.linear1(x)
+        return self.norm(x + self.linear2(self.dropout(F.relu(x))))
     
 if __name__ == '__main__':
 
