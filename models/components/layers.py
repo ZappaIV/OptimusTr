@@ -14,7 +14,7 @@ class EncoderLayer(nn.Module):
                  ):
         super(EncoderLayer, self).__init__()
         self.self_attention = MultiHeadAttention(embed_dim, num_heads) if not use_nn_mha else nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
-        self.feed_forward = FeedForward(embed_dim, d_ff)
+        self.feed_forward = FeedForward(embed_dim)
         self.norm1 = nn.LayerNorm(embed_dim)
         self.norm2 = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(0.1)
@@ -45,7 +45,7 @@ class DecoderLayer(nn.Module):
                 
         self.self_attention = MultiHeadAttention(embed_dim, num_heads) if not use_nn_mha else nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
         self.cross_attention = MultiHeadAttention(embed_dim, num_heads) if not use_nn_mha else nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
-        self.feed_forward = FeedForward(embed_dim, d_ff)
+        self.feed_forward = FeedForward(embed_dim)
         self.norm1 = nn.LayerNorm(embed_dim)
         self.norm2 = nn.LayerNorm(embed_dim)
         self.norm3 = nn.LayerNorm(embed_dim)

@@ -99,11 +99,12 @@ class MultiHeadAttention(nn.Module):
         return output
 
 class FeedForward(nn.Module):
-    def __init__(self, embed_dim, d_ff):
+    def __init__(self, embed_dim, dropout=0.0):
         super(FeedForward, self).__init__()
-        self.linear1 = nn.Linear(embed_dim, d_ff)
-        self.linear2 = nn.Linear(d_ff, embed_dim)
-        self.dropout = nn.Dropout(0.1)
+        self.linear1 = nn.Linear(embed_dim, embed_dim)
+        self.linear2 = nn.Linear(embed_dim, embed_dim)
+        self.dropout = nn.Dropout(dropout)
+        self.relu = nn.ReLU()
         self.norm = nn.LayerNorm(embed_dim)
 
     def forward(self, x):
@@ -136,8 +137,7 @@ if __name__ == '__main__':
     )
 
     ff_block = FeedForward(
-        embed_dim=embed_dim,
-        d_ff=d_ff    
+        embed_dim=embed_dim  
     )
 
     la_embedding = embedding(la_tensor)
