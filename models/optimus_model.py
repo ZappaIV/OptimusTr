@@ -5,6 +5,7 @@ import math
 
 from models.components.encoders import Encoder
 from models.components.decoders import Decoder
+from models.components.attentions import create_padding_mask
 
 class TransformerTranslation(nn.Module):
     def __init__(self, 
@@ -12,37 +13,30 @@ class TransformerTranslation(nn.Module):
                  tgt_vocab_size,
                  embed_dim=256, 
                  num_heads=8,
-                 d_ff=256, 
                  n_layers=6,
                  max_len=5000,
                  dropout=0.1,
-                 use_nn_mha = False
                  ):
         super(TransformerTranslation, self).__init__()
         print(f"{src_vocab_size=}, {tgt_vocab_size=}")
         
-        self.use_nn_mha = use_nn_mha
         
         self.encoder = Encoder(
             src_vocab_size, 
             embed_dim, 
             num_heads, 
-            d_ff, 
             n_layers, 
             max_len, 
             dropout,
-            use_nn_mha
             )
         
         self.decoder = Decoder(
             tgt_vocab_size, 
             embed_dim, 
             num_heads, 
-            d_ff, 
             n_layers, 
             max_len, 
             dropout,
-            use_nn_mha
             )
         
         self.output_projection = nn.Linear(embed_dim, tgt_vocab_size)
@@ -55,56 +49,25 @@ class TransformerTranslation(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def generate_square_subsequent_mask(self, sz):
-        """Genera la maschera triangolare per il decoder (causal mask)"""
-        mask = torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal=1)
-        return mask
-
-    def create_pad_mask(self, seq, pad_id):
-        return (seq == pad_id)
-    
-    def make_src_mask(self, src):
-        # Maschera per padding nel source
-        src_mask = (src != 0).unsqueeze(1).unsqueeze(2)
-        return src_mask
-
-    def make_tgt_mask(self, tgt):
-        # Maschera per padding nel target
-        tgt_pad_mask = (tgt != 0).unsqueeze(1).unsqueeze(3)
-
-        # Maschera causale per impedire di vedere token futuri
-        tgt_len = tgt.size(1)
-        tgt_sub_mask = torch.tril(torch.ones((tgt_len, tgt_len), device=tgt.device)).bool()
-
-        # Combina le maschere
-        tgt_mask = tgt_pad_mask & tgt_sub_mask
-        return tgt_mask
-
-    def encode(self, src, src_pad_idx=0):
-        """Encoding della sequenza sorgente"""
-        src_mask = self.create_padding_mask(src, src_pad_idx)
-        return self.encoder(src, src_mask)
-    
-    def decode_step(self, tgt, encoder_output, src_mask=None):
-        """Singolo step di decodifica (utile per inferenza)"""
-        tgt_mask = self.generate_square_subsequent_mask(tgt.size(1)).to(tgt.device)
-        decoder_output = self.decoder(tgt, encoder_output, tgt_mask, src_mask)
-        return self.output_projection(decoder_output)
-
 
     def forward(self, src, tgt, src_pad_idx=0, tgt_pad_idx=0):
-        # Crea le maschere
-        if not self.use_nn_mha:
-            src_mask = self.make_src_mask(src)
-            tgt_mask = self.make_tgt_mask(tgt)
-        else:
-            src_mask = self.create_pad_mask(src, src_pad_idx)
-            tgt_mask = self.generate_square_subsequent_mask(tgt.size(1)).to(tgt.device)
+        # Crea le maschere        
+        src_mask = create_padding_mask(src, src_pad_idx)
+        tgt_mask = create_padding_mask(tgt, tgt_pad_idx)
+
         # Encoding
-        encoder_output = self.encoder(src, src_mask)
+        encoder_output = self.encoder(
+            src,
+            padding_mask=src_mask
+            )
 
         # Decoding
-        decoder_output = self.decoder(tgt, encoder_output, tgt_mask, src_mask)
+        decoder_output = self.decoder(
+            tgt,
+            encoder_output,
+            self_padding_mask = tgt_mask,
+            cross_padding_mask = src_mask
+            )
 
         # Proiezione finale
         output = self.output_projection(decoder_output)
@@ -120,7 +83,7 @@ class TransformerTranslation(nn.Module):
         self.eval()
         with torch.no_grad():
             # Encoding del source
-            src_mask = self.make_src_mask(src)
+            src_mask = create_padding_mask(src)
             encoder_output = self.encoder(src, src_mask)
 
             # Inizializza il target con il token di start
@@ -129,7 +92,7 @@ class TransformerTranslation(nn.Module):
 
             for _ in range(max_len):
                 # Crea la maschera per il target corrente
-                tgt_mask = self.make_tgt_mask(tgt)
+                tgt_mask = create_padding_mask(tgt)
 
                 # Decodifica
                 decoder_output = self.decoder(tgt, encoder_output, tgt_mask, src_mask)
@@ -159,7 +122,6 @@ if __name__ == '__main__':
         'num_heads': 16,
         'n_layers': 1,
         'hidden_dim': 256,
-        'd_ff': 256,
         'max_seq_length': 100,
         'dropout': 0.1,
         'batch_size': 32,
@@ -176,10 +138,8 @@ if __name__ == '__main__':
     n_layers=config['n_layers'],
     embed_dim=config['embed_dim'],
     num_heads=config['num_heads'],
-    d_ff=config['d_ff'],
     max_len=config['max_seq_length'],
     dropout=config['dropout'],
-    use_nn_mha=True
     ).to(device)
     
     print(model)
@@ -188,3 +148,22 @@ if __name__ == '__main__':
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Parametri totali: {total_params:,}")
     print(f"Parametri trainable: {trainable_params:,}")
+    
+    src = torch.randint(1, config['src_vocab_size'], (config['batch_size'], 20))
+    tgt = torch.randint(1, config['tgt_vocab_size'], (config['batch_size'], 20))
+    
+    # Test forward pass
+    print("=== Test Forward Pass ===")
+    with torch.no_grad():
+        output = model(src, tgt)
+        print(f"Input source shape: {src.shape}")
+        print(f"Input target shape: {tgt.shape}")
+        print(f"Output shape: {output.shape}")  # [batch_size, tgt_len, vocab_size]
+    
+    # Test generazione
+    print("\n=== Test Generazione ===")
+    with torch.no_grad():
+        generated = model.generate(src, max_len=20, start_token=1, end_token=2)
+        print(f"Generated sequence shape: {generated.shape}")
+        print(f"First generated sequence: {generated[0].tolist()}")
+    

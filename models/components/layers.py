@@ -1,30 +1,35 @@
 import torch
 import torch.nn as nn
-
+from transformers import BertLayer, BertConfig
 from models.components.attentions import MultiHeadAttention, FeedForward
+from models.components.attentions import create_causal_mask, create_padding_mask, create_cross_attention_mask
 
 
 class EncoderLayer(nn.Module):
     def __init__(self, 
                  embed_dim, 
                  num_heads, 
-                 d_ff, 
                  dropout=0.1,
-                 use_nn_mha=False,
                  ):
         super(EncoderLayer, self).__init__()
-        self.self_attention = MultiHeadAttention(embed_dim, num_heads) if not use_nn_mha else nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
+        self.self_attention = MultiHeadAttention(embed_dim, num_heads) 
         self.feed_forward = FeedForward(embed_dim)
         self.norm1 = nn.LayerNorm(embed_dim)
         self.norm2 = nn.LayerNorm(embed_dim)
-        self.dropout = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, mask=None):
+    def forward(self, 
+                x,
+                padding_mask=None
+                ):
         # Self-attention con connessione residua
-        if isinstance(self.self_attention, MultiHeadAttention):
-            attn_output = self.self_attention(x, x, x, mask)
-        elif isinstance(self.self_attention, nn.MultiheadAttention):
-            attn_output, _ = self.self_attention(x, x, x,  key_padding_mask=mask)
+        attn_output = self.self_attention(
+            x,
+            x,
+            x,
+            padding_mask,
+            is_causal = False
+            )
         x = self.norm1(x + self.dropout(attn_output))
 
         # Feed-forward con connessione residua
@@ -37,43 +42,42 @@ class DecoderLayer(nn.Module):
     def __init__(self, 
                  embed_dim, 
                  num_heads, 
-                 d_ff, 
                  dropout=0.1,
-                 use_nn_mha=False,
                  ):
         super(DecoderLayer, self).__init__()
                 
-        self.self_attention = MultiHeadAttention(embed_dim, num_heads) if not use_nn_mha else nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
-        self.cross_attention = MultiHeadAttention(embed_dim, num_heads) if not use_nn_mha else nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
+        self.self_attention = MultiHeadAttention(embed_dim, num_heads) 
+        self.cross_attention = MultiHeadAttention(embed_dim, num_heads) 
         self.feed_forward = FeedForward(embed_dim)
         self.norm1 = nn.LayerNorm(embed_dim)
         self.norm2 = nn.LayerNorm(embed_dim)
         self.norm3 = nn.LayerNorm(embed_dim)
-        self.dropout = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, encoder_output, tgt_mask=None, src_mask=None):
+    def forward(self,
+                x,
+                encoder_output,
+                self_padding_mask = None, # Target
+                cross_padding_mask = None, # Source
+                ):
         # Self-attention mascherata
-        if isinstance(self.self_attention, MultiHeadAttention):
-            attn_output = self.self_attention(x, x, x, tgt_mask)
-        elif isinstance(self.self_attention, nn.MultiheadAttention):
-            attn_output, _ = self.self_attention(x, x, x, attn_mask = tgt_mask)
+        attn_output = self.self_attention(
+            x,
+            x,
+            x,
+            None,
+            is_causal = True
+            )
         x = self.norm1(x + self.dropout(attn_output))
 
         # Cross-attention con l'encoder
-        if isinstance(self.cross_attention, MultiHeadAttention):
-            cross_attn_output = self.cross_attention(
-                x,
-                encoder_output, 
-                encoder_output, 
-                src_mask
-                )
-        elif isinstance(self.cross_attention, nn.MultiheadAttention):
-            cross_attn_output, _ = self.cross_attention(
-                x,
-                encoder_output, 
-                encoder_output, 
-                src_mask
-            )    
+        cross_attn_output = self.cross_attention(
+            encoder_output,
+            encoder_output, 
+            x, 
+            cross_padding_mask,
+            is_causal = False
+            )
         x = self.norm2(x + self.dropout(cross_attn_output))
 
         # Feed-forward
@@ -81,6 +85,8 @@ class DecoderLayer(nn.Module):
         x = self.norm3(x + self.dropout(ff_output))
 
         return x
+
+
     
 if __name__ == '__main__':
 
