@@ -91,6 +91,7 @@ class TransformerTranslation(nn.Module):
             tgt = torch.full((batch_size, 1), start_token, device=src.device)
 
             for _ in range(max_len):
+                # TODO: fix masking for generation
                 # Crea la maschera per il target corrente
                 tgt_mask = create_padding_mask(tgt)
 

@@ -73,7 +73,7 @@ class DecoderLayer(nn.Module):
         # Cross-attention con l'encoder
         cross_attn_output = self.cross_attention(
             encoder_output,
-            encoder_output, 
+            x, 
             x, 
             cross_padding_mask,
             is_causal = False
