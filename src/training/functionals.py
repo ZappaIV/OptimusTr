@@ -1,7 +1,12 @@
 import torch
 from torch import nn
+from torch import Tensor
+from torch.utils.data import Dataset, DataLoader
+from typing import Optional
 import time, math
 from tqdm import tqdm
+
+from src.transformers.models.functionals import create_cross_attention_mask
 
 class LabelSmoothingLoss(nn.Module):
     """Label smoothing per migliorare la generalizzazione"""
@@ -35,7 +40,12 @@ class LabelSmoothingLoss(nn.Module):
 class NoamScheduler:
     """Learning rate scheduler come nel paper originale"""
 
-    def __init__(self, optimizer, d_model, warmup_steps=4000):
+    def __init__(
+        self,
+        optimizer: torch.optim.Adam, 
+        d_model: int, 
+        warmup_steps: int = 4000
+    ):
         self.optimizer = optimizer
         self.d_model = d_model
         self.warmup_steps = warmup_steps
@@ -52,7 +62,12 @@ class NoamScheduler:
         return self.optimizer.param_groups[0]['lr']
 
 
-def evaluate(model, dataloader, criterion, device):
+def evaluate(
+    model: nn.Module,
+    dataloader: DataLoader,
+    criterion: nn.Module,
+    device: torch.device
+):
     """Valutazione del modello"""
     model.eval()
     total_loss = 0
@@ -68,15 +83,29 @@ def evaluate(model, dataloader, criterion, device):
                 en_input = batch_data['tgt'].to(device)
 
 
+            src = la_input
+            tgt = en_input
+            
+            cross_padding_mask = create_cross_attention_mask(
+                query_seq=tgt,
+                key_seq=src
+            )
+
             # Teacher forcing: input del decoder senza l'ultimo token
-            tgt_input = en_input[:, :-1]
             # Target: output atteso senza il primo token (SOS)
             tgt_output = en_input[:, 1:]
 
             # Forward pass
-            output = model(la_input, tgt_input)
+            logits = model(
+                src, 
+                tgt,
+                cross_padding_mask = cross_padding_mask,
+                tgt_is_causal = True,
+                memory_is_causal = True
+            )
 
-            output_flat = output.reshape(-1, output.size(-1))
+
+            output_flat = logits.reshape(-1, logits.size(-1))
             tgt_flat = tgt_output.reshape(-1)
 
             loss = criterion(output_flat, tgt_flat)
@@ -89,7 +118,15 @@ def evaluate(model, dataloader, criterion, device):
     perplexity = math.exp(avg_loss)
     return avg_loss, perplexity
 
-def train_epoch(model, dataloader, criterion, optimizer, scheduler, device, epoch):
+def train_epoch(
+    model: nn.Module,
+    dataloader: DataLoader, 
+    criterion: LabelSmoothingLoss, 
+    optimizer: torch.optim.Adam, 
+    scheduler: NoamScheduler,
+    device: torch.device,
+    epoch: int
+):
     """Training per una singola epoca"""
     model.train()
     total_loss = 0
@@ -105,17 +142,29 @@ def train_epoch(model, dataloader, criterion, optimizer, scheduler, device, epoc
             la_input = batch_data['src'].to(device)
             en_input = batch_data['tgt'].to(device)
 
+        src = la_input
+        tgt = en_input
+        
+        cross_padding_mask = create_cross_attention_mask(
+            query_seq=tgt,
+            key_seq=src
+        )
 
         # Teacher forcing: input del decoder senza l'ultimo token
-        tgt_input = en_input[:, :-1]
         # Target: output atteso senza il primo token (SOS)
         tgt_output = en_input[:, 1:]
 
         # Forward pass
-        output = model(la_input, tgt_input)
+        logits = model(
+            src, 
+            tgt,
+            cross_padding_mask = cross_padding_mask,
+            tgt_is_causal = True,
+            memory_is_causal = True
+        )
 
         # Calcola loss
-        output_flat = output.reshape(-1, output.size(-1))
+        output_flat = logits.reshape(-1, logits.size(-1))
         tgt_flat = tgt_output.reshape(-1)
 
         # Maschera i padding tokens
@@ -146,7 +195,14 @@ def train_epoch(model, dataloader, criterion, optimizer, scheduler, device, epoc
     avg_loss = total_loss / total_tokens
     return avg_loss
 
-def save_checkpoint(model, optimizer, scheduler, epoch, loss, path):
+def save_checkpoint(
+    model: nn.Module,
+    optimizer: torch.optim.Adam,
+    scheduler: NoamScheduler,
+    epoch: int,
+    loss: float,
+    path: str
+):
     """Salva checkpoint del modello"""
     checkpoint = {
         'epoch': epoch,
@@ -158,7 +214,12 @@ def save_checkpoint(model, optimizer, scheduler, epoch, loss, path):
     torch.save(checkpoint, path)
 
 
-def load_checkpoint(model, optimizer, scheduler, path):
+def load_checkpoint(
+    model: nn.Module,
+    optimizer: torch.optim.Adam, 
+    scheduler: NoamScheduler, 
+    path: str
+):
     """Carica checkpoint del modello"""
     checkpoint = torch.load(path)
     model.load_state_dict(checkpoint['model_state_dict'])

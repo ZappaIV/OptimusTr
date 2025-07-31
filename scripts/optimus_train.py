@@ -7,7 +7,7 @@ import numpy as np
 # import training.training_func
 
 from src.training.functionals import train_epoch, evaluate, save_checkpoint, load_checkpoint, LabelSmoothingLoss, NoamScheduler
-from src.transformers.models.optimus_model import TransformerTranslation
+from src.transformers.models.optimus_model import OptimusTransformer
 from src.data.dataloaders import TranslationDataset, trl_nn_collate_fn
 from torch.utils.data import Dataset, DataLoader
 
@@ -86,7 +86,7 @@ print(la_tensor.shape, en_tensor.shape, la_tensor[0], en_tensor[0])
 print(f"Config: {json.dumps(config, indent=2)}")
 
 print('inizializzo il modello')
-model = TransformerTranslation(
+model = OptimusTransformer(
     src_vocab_size=len(la_vocab),
     tgt_vocab_size=len(en_vocab),
     n_layers=config['n_layers'],
