@@ -2,7 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+from torch import Tensor
 from transformers import BertLayer, BertConfig
+from typing import Optional 
 
 from models.components.embeddings import PositionalEncoding
 from models.components.layers import EncoderLayer
@@ -25,7 +27,13 @@ class Encoder(nn.Module):
             ])
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, padding_mask=None):
+    def forward(
+        self,
+        x: Tensor,
+        mask: Optional[Tensor] = None,
+        src_key_padding_mask: Optional[Tensor] = None,
+        is_causal: Optional[bool] = False
+    ) -> Tensor:
         # Embedding + scaling + positional encoding
         x = self.embedding(x) * math.sqrt(self.embed_dim)
         x = self.positional_encoding(x)
@@ -33,11 +41,18 @@ class Encoder(nn.Module):
 
         # Passa attraverso tutti i layer dell'encoder
         for layer in self.layers:
-            x = layer(x, padding_mask=padding_mask)
+            x = layer(
+                x,
+                mask = mask,
+                padding_mask=src_key_padding_mask,
+                is_causal = is_causal
+            )
 
         return x
 
 if __name__ == '__main__':
+
+    from models.components.attentions import create_padding_mask
 
     embed_dim = 128
     num_heads = 8
@@ -49,8 +64,15 @@ if __name__ == '__main__':
     
     la_seq_len = 9
     
-    la_tensor = torch.randint(1, 10**4,[batch_size, la_seq_len], dtype=int)
+    la_tensor = torch.tensor(
+        [[ 1,3,4,2,0,0,0],
+         [ 1,3,4,4,2,0,0],
+         [ 1,2,0,0,0,0,0]]
+    )
+    
+    src_padding_mask = create_padding_mask(la_tensor)
     print(f"{la_tensor.shape=}")
+    print(f"{src_padding_mask=}")
     
     encoder = Encoder(
         vocab_size = 10**4,
@@ -61,7 +83,12 @@ if __name__ == '__main__':
     )
     
     print(encoder)
+    memory = encoder(
+        la_tensor,
+        src_padding_mask=src_padding_mask
+    )
+    
     print(
-        f"\n{encoder(la_tensor).shape=}",
+        f"\n{memory.shape=}",
     )
     del encoder

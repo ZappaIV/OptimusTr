@@ -22,7 +22,8 @@
             "name": "Python Debugger: Module Components",
             "type": "debugpy",
             "request": "launch",
-            "module": "models.components.${fileBasenameNoExtension}"
+            "module": "models.components.${fileBasenameNoExtension}",
+            "justMyCode": false
         },
     ]
 }

@@ -1,73 +1,17 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
+from typing import Optional
 import math
+from typing import Callable, Optional, TYPE_CHECKING, Union
+# from utility.functions import create_causal_mask, create_cross_attention_mask, create_padding_mask
 
 ####################
 #                  #
 # MASKING FUNCTION #
 #                  #
 ####################
-
-def create_padding_mask(seq, pad_token_id=0):
-    """
-    Crea una maschera per il padding
-    
-    Args:
-        seq: Sequenza di token [batch_size, seq_len]
-        pad_token_id: ID del token di padding
-    
-    Returns:
-        mask: Maschera [batch_size, 1, seq_len, seq_len]
-    """
-    # Identifica le posizioni non-padding
-    padding_mask = (seq != pad_token_id) # [batch_size, 1, 1, seq_len]
-    
-    # Opzione 1: Maschera per una singola sequenza del batch (es. la prima)
-    single_seq_mask = padding_mask[0]  # Shape: (7,)
-    # Per self-attention, espandi a (L, S)
-    mask = single_seq_mask.unsqueeze(0) & single_seq_mask.unsqueeze(1)
-    # Espandi per creare maschera bidimensionale
-    # seq_len = seq.size(1)
-    # mask = mask.expand(-1, -1, seq_len, -1)  # [batch_size, 1, seq_len, seq_len]
-    
-    return mask
-
-def create_causal_mask(seq_len, device):
-    """
-    Crea una maschera causale (triangolare inferiore) per prevenire l'attention su token futuri
-    
-    Args:
-        seq_len: Lunghezza della sequenza
-        device: Device su cui creare il tensore
-    
-    Returns:
-        mask: Maschera causale [1, 1, seq_len, seq_len]
-    """
-    mask = torch.tril(torch.ones(seq_len, seq_len, device=device))
-    return mask.unsqueeze(0).unsqueeze(0)
-
-def create_cross_attention_mask(query_seq, key_seq, pad_token_id=0):
-    """
-    Crea una maschera per cross-attention considerando il padding
-    
-    Args:
-        query_seq: Sequenza query [batch_size, seq_len_q]
-        key_seq: Sequenza key [batch_size, seq_len_k]
-        pad_token_id: ID del token di padding
-    
-    Returns:
-        mask: Maschera [batch_size, 1, seq_len_q, seq_len_k]
-    """
-    # Maschera per le posizioni non-padding nelle key
-    key_mask = (key_seq != pad_token_id).unsqueeze(1).unsqueeze(1)  # [batch_size, 1, 1, seq_len_k]
-    
-    # Espandi per tutte le posizioni query
-    seq_len_q = query_seq.size(1)
-    mask = key_mask.expand(-1, -1, seq_len_q, -1)  # [batch_size, 1, seq_len_q, seq_len_k]
-    
-    return mask
-
 
 class AttentionBlock(nn.Module):
     
@@ -106,10 +50,11 @@ class AttentionBlock(nn.Module):
         return x
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, 
-                 embed_dim, 
-                 num_heads
-                 ):
+    def __init__(
+        self, 
+        embed_dim:int, 
+        num_heads: int
+    ):
         super(MultiHeadAttention, self).__init__()
         assert embed_dim % num_heads == 0
 
@@ -125,11 +70,21 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(0.1)
 
     @staticmethod
-    def scaled_dot_product_attention(query, key, value, attn_mask=None, dropout_p=0.0,
-        is_causal=False, scale=None, enable_gqa=False) -> tuple[torch.Tensor, torch.Tensor]:
+    def scaled_dot_product_attention(
+        query: Tensor,
+        key: Tensor, 
+        value: Tensor,
+        attn_mask: Optional[Tensor] = None, 
+        dropout_p: Optional[float] = 0.0,
+        is_causal: Optional[bool] = False,
+        scale: Optional[float] = None,
+        enable_gqa: Optional[bool]=False
+    ) -> tuple[Tensor, Tensor]:
+        
         L, S = query.size(-2), key.size(-2)
         scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
         attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
+
         if is_causal:
             assert attn_mask is None
             temp_mask = torch.ones(L, S, dtype=torch.bool).tril(diagonal=0)
@@ -152,14 +107,27 @@ class MultiHeadAttention(nn.Module):
         attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
         return attn_weight @ value, attn_weight
 
-    def forward(self, query, key=None, value=None, mask=None, is_causal = False):
+    @staticmethod
+    def clear_nan(tensor: torch.Tensor):
+        return torch.where(torch.isnan(tensor), 
+                               torch.zeros_like(tensor), 
+                               tensor)
+
+    def forward(self,
+                query: Tensor,
+                key: Optional[Tensor],
+                value: Optional[Tensor], 
+                mask: Optional[Tensor] = None,
+                padding_mask: Optional[Tensor] = None,
+                is_causal: Optional[bool] = False
+                ):
         """
         Forward pass del Multi-Head Attention
         
         Args:
             query: Tensor query [batch_size, seq_len_q, d_model]
-            key: Tensor key [batch_size, seq_len_k, d_model] (se None, usa query per self-attention)
-            value: Tensor value [batch_size, seq_len_v, d_model] (se None, usa query per self-attention)
+            key: Tensor key [batch_size, seq_len_k, d_model] 
+            value: Tensor value [batch_size, seq_len_v, d_model]
             mask: Maschera [batch_size, seq_len_q, seq_len_k] o [batch_size, 1, seq_len_q, seq_len_k]
         
         Returns:
@@ -167,27 +135,59 @@ class MultiHeadAttention(nn.Module):
             attention_weights: Pesi di attenzione [batch_size, num_heads, seq_len_q, seq_len_k]
         """
         
-        batch_size = query.size(0)
+        batch_size, seq_len_q, embed_dim = query.shape
 
         if key is None:
             key = query
         if value is None:
             value = query
 
-        seq_len_q = query.size(1)
         seq_len_k = key.size(1)
         seq_len_v = value.size(1)
+
+        # mask = F._canonical_mask(
+        #         mask=mask,
+        #         mask_name='mask',
+        #         other_type=F._none_or_dtype(mask),
+        #         other_name="mask",
+        #         target_type=torch.float,  
+        # )
+
+        padding_mask = F._canonical_mask(
+                mask=padding_mask,
+                mask_name='padding_mask',
+                other_type=F._none_or_dtype(padding_mask),
+                other_name="mask",
+                target_type=torch.float,  
+        )
+
         
         # Trasformazioni lineari e reshape per multi-head
         Q = self.w_q(query).view(batch_size, seq_len_q, self.num_heads, self.d_k).transpose(1, 2)
         K = self.w_k(key).view(batch_size, seq_len_k, self.num_heads, self.d_k).transpose(1, 2)
         V = self.w_v(value).view(batch_size, seq_len_v, self.num_heads, self.d_k).transpose(1, 2)
 
+        if padding_mask is not None:
+            attn_mask = (padding_mask.view(batch_size, 1, 1, seq_len_q)
+                .expand(-1, self.num_heads, -1, -1)
+                .reshape(batch_size*self.num_heads, 1, seq_len_q)
+                )
+        else:
+            attn_mask = None
+                
+        if attn_mask is not None:
+            if attn_mask.size(0) == 1 and attn_mask.dim() == 3:
+                attn_mask = attn_mask.unsqueeze(0)
+            else:
+                attn_mask = attn_mask.view(batch_size, self.num_heads, -1, seq_len_q)
+
         # Applica l'attenzione
-        context, attention_weights = self.scaled_dot_product_attention(Q, K, V, mask, is_causal=is_causal)
+        context, attention_weights = self.scaled_dot_product_attention(Q, K, V, attn_mask, is_causal=is_causal)
 
         # Concatena le teste
-        context = context.transpose(1, 2).contiguous().view(batch_size, seq_len_q, self.embed_dim)
+        context = self.clear_nan(
+            context.transpose(1, 2).contiguous().view(batch_size, seq_len_q, self.embed_dim)
+            )
 
         # Proiezione finale
         output = self.w_o(context)
@@ -209,6 +209,7 @@ class FeedForward(nn.Module):
     
 if __name__ == '__main__':
 
+    from utility.functions import ( generate_square_subsequent_mask, create_cross_attention_mask )
     embed_dim = 128
     num_heads = 8
     hidden_dim = 200
@@ -217,32 +218,36 @@ if __name__ == '__main__':
     d_ff = hidden_dim
     num_head = 8
 
-    la_tensor = torch.ones(batch_size, embed_dim, dtype=int)
-    print(la_tensor.shape)
-    embedding = nn.Embedding(10**4, embedding_dim=embed_dim)
+    src = torch.tensor(
+        [[ 1,3,4,2,0,0,0],
+        [ 1,3,4,4,2,0,0],
+        [ 1,2,0,0,0,0,0]]
+    )
+        
+    # en_tensor = torch.randint(1, 10**4,[batch_size, seq_len], dtype=int)
+    tgt = torch.tensor(
+        [[ 1,3,2,0,0,0,0,0],
+        [ 1,3,3,3,2,0,0,0],
+        [ 1,3,2,0,0,0,0,0]]
+    )
 
-    attention_block = AttentionBlock(
-        embed_dim=embed_dim,
-        hidden_dim=200,
-        num_heads=num_head
-        )
+    print(src.shape, tgt.shape)
+
+    embedding = nn.Embedding(10**4, embedding_dim=embed_dim)
+    src_embedding = embedding(src)
+    tgt_embedding = embedding(tgt)
+
+    print(src_embedding.shape, tgt_embedding.shape)
+    attn_mask = generate_square_subsequent_mask(tgt.shape[-1])
 
     multihead_block = MultiHeadAttention(
         embed_dim=embed_dim,
         num_heads=num_head   
     )
 
-    ff_block = FeedForward(
-        embed_dim=embed_dim  
-    )
-
-    la_embedding = embedding(la_tensor)
     print(
-        f"\n{la_tensor.shape=}"
-        f"\n{la_embedding.shape=}",
-        f"\n{attention_block(la_embedding).shape=}", 
-        f"\n{multihead_block(la_embedding, la_embedding, la_embedding).shape=}",
-        f"\n{ff_block(la_embedding).shape=}"
+        f"\n{src_embedding.shape=}"
+        f"\n{tgt_embedding.shape=}",
+        f"\n{multihead_block(tgt_embedding, src_embedding, src_embedding, is_causal=True).shape=}",
     )
 
-    del la_embedding, multihead_block, attention_block, embedding, ff_block    

@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
 import math
+from typing import Optional
 
 from models.components.encoders import Encoder
 from models.components.decoders import Decoder
@@ -50,23 +52,44 @@ class TransformerTranslation(nn.Module):
                 nn.init.xavier_uniform_(p)
 
 
-    def forward(self, src, tgt, src_pad_idx=0, tgt_pad_idx=0):
-        # Crea le maschere        
-        src_mask = create_padding_mask(src, src_pad_idx)
-        tgt_mask = create_padding_mask(tgt, tgt_pad_idx)
+    def forward(
+        self, 
+        src: Tensor, 
+        tgt: Tensor,
+        src_mask: Optional[Tensor] = None,
+        tgt_mask: Optional[Tensor] = None,
+        memory_mask: Optional[Tensor] = None,
+        src_key_padding_mask: Optional[torch.Tensor] = None,
+        tgt_key_padding_mask: Optional[torch.Tensor] = None,
+        memory_key_padding_mask: Optional[Tensor] = None,
+        src_is_causal: Optional[bool] = False,
+        tgt_is_causal: Optional[bool] = False,
+        memory_is_causal: bool = False,
+        batch_first = True
+    ):
+        
+        # pre-checks
+        is_batched = src.dim() == 3
+        if (src.size(0) != tgt.size(0)) and is_batched:
+            raise RuntimeError("the batch number of src and tgt must be equal")
 
+        # Crea le maschere  
+              
         # Encoding
-        encoder_output = self.encoder(
+        memory = self.encoder(
             src,
-            padding_mask=src_mask
-            )
+            mask = src_mask,
+            src_key_padding_mask=src_key_padding_mask,
+            is_causal=src_is_causal,
+
+        )
 
         # Decoding
         decoder_output = self.decoder(
             tgt,
-            encoder_output,
-            self_padding_mask = tgt_mask,
-            cross_padding_mask = src_mask
+            memory,
+            self_padding_mask = tgt_key_padding_mask,
+            cross_padding_mask = src_key_padding_mask
             )
 
         # Proiezione finale
@@ -83,7 +106,7 @@ class TransformerTranslation(nn.Module):
         self.eval()
         with torch.no_grad():
             # Encoding del source
-            src_mask = create_padding_mask(src)
+            src_mask = ( src == 0)
             encoder_output = self.encoder(src, src_mask)
 
             # Inizializza il target con il token di start
@@ -150,8 +173,23 @@ if __name__ == '__main__':
     print(f"Parametri totali: {total_params:,}")
     print(f"Parametri trainable: {trainable_params:,}")
     
-    src = torch.randint(1, config['src_vocab_size'], (config['batch_size'], 20))
-    tgt = torch.randint(1, config['tgt_vocab_size'], (config['batch_size'], 20))
+    # src = torch.randint(1, config['src_vocab_size'], (config['batch_size'], 20))
+    # tgt = torch.randint(1, config['tgt_vocab_size'], (config['batch_size'], 20))
+
+    src = torch.tensor(
+        [[ 1,3,4,2,0,0,0],
+         [ 1,3,4,4,2,0,0],
+         [ 1,2,0,0,0,0,0]]
+    )
+        
+    # en_tensor = torch.randint(1, 10**4,[batch_size, seq_len], dtype=int)
+    tgt = torch.tensor(
+        [[ 1,3,2,0,0,0,0],
+         [ 1,3,3,3,2,0,0],
+         [ 1,3,2,0,0,0,0]]
+    )
+    
+    start_seq = torch.tensor([[1],[1],[1]])
     
     # Test forward pass
     print("=== Test Forward Pass ===")

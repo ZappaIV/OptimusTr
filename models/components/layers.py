@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
-from transformers import BertLayer, BertConfig
+from torch import Tensor
+from typing import Optional
 from models.components.attentions import MultiHeadAttention, FeedForward
-from models.components.attentions import create_causal_mask, create_padding_mask, create_cross_attention_mask
+from utility.functions import create_causal_mask, create_padding_mask, create_cross_attention_mask
 
 
 class EncoderLayer(nn.Module):
@@ -18,17 +19,22 @@ class EncoderLayer(nn.Module):
         self.norm2 = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, 
-                x,
-                padding_mask=None
-                ):
+    def forward(
+        self, 
+        x: Tensor,
+        mask: Optional[Tensor] = None,
+        padding_mask: Optional[Tensor] = None,
+        is_causal: Optional[Tensor] = False
+    ) -> Tensor:
         # Self-attention con connessione residua
+        # x = x.transpose(0,1)
         attn_output = self.self_attention(
             x,
             x,
             x,
+            mask,
             padding_mask,
-            is_causal = False
+            is_causal = is_causal
             )
         x = self.norm1(x + self.dropout(attn_output))
 
@@ -72,9 +78,9 @@ class DecoderLayer(nn.Module):
 
         # Cross-attention con l'encoder
         cross_attn_output = self.cross_attention(
-            encoder_output,
-            x, 
-            x, 
+            x,
+            encoder_output, 
+            encoder_output, 
             cross_padding_mask,
             is_causal = False
             )
@@ -90,6 +96,8 @@ class DecoderLayer(nn.Module):
     
 if __name__ == '__main__':
 
+
+
     embed_dim = 128
     num_heads = 8
     hidden_dim = 200
@@ -98,9 +106,27 @@ if __name__ == '__main__':
     d_ff = hidden_dim
     num_head = 8
     
-    la_tensor = torch.ones(batch_size, embed_dim, dtype=int)
-    en_tensor = torch.ones(batch_size, embed_dim, dtype=int)
-    print(la_tensor.shape)
+    la_tensor = torch.tensor(
+        [[ 1,3,4,2,0,0,0],
+         [ 1,3,4,4,2,0,0],
+         [ 1,2,0,0,0,0,0]
+         ]
+    )
+    
+    src_padding_mask = create_padding_mask(la_tensor)
+    print(f"{la_tensor.shape=}")
+    print(f"{src_padding_mask=}")
+    
+    # en_tensor = torch.randint(1, 10**4,[batch_size, seq_len], dtype=int)
+    en_tensor = torch.tensor(
+        [[ 1,3,2,0,0,0,0],
+         [ 1,3,3,3,2,0,0],
+         [ 1,3,2,0,0,0,0]
+         ]
+    )
+    tgt_padding_mask = create_padding_mask(en_tensor)
+    print(f"{en_tensor.shape=}")
+    print(f"{tgt_padding_mask=}")
     
     embedding = nn.Embedding(10**4, embedding_dim=embed_dim)
     la_embedding = embedding(la_tensor)
@@ -109,15 +135,30 @@ if __name__ == '__main__':
     encoder_layer = EncoderLayer(
         embed_dim=embed_dim,
         num_heads=num_head,
-        d_ff=d_ff,
-        use_nn_mha=True
     )    
+    
     decoder_layer = DecoderLayer(
         embed_dim=embed_dim,
         num_heads=num_head,
-        d_ff=d_ff,
-        use_nn_mha=True
     )  
+
+    built_encoder_layer = nn.TransformerEncoderLayer(
+            d_model=embed_dim,
+            nhead=num_head
+    )
+
+    built_decoder_layer = nn.TransformerDecoderLayer(
+            d_model=embed_dim,
+            nhead=num_head
+    )
+
+    memory = built_encoder_layer(la_embedding.transpose(0,1), src_key_padding_mask=( la_tensor == 0 ))
+    
+    print(built_decoder_layer(en_embedding.transpose(0,1), memory,
+                              tgt_key_padding_mask=(tgt_padding_mask == False),
+                              memory_key_padding_mask=(src_padding_mask == False)
+                              ))
+    
     
     print(
         f"\n{la_tensor.shape=}"

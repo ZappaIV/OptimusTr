@@ -52,7 +52,7 @@ if __name__ == '__main__':
     
     from models.components.encoders import Encoder
     from models.components.attentions import create_padding_mask
-
+    
     embed_dim = 128
     num_heads = 8
     hidden_dim = 200
@@ -68,8 +68,9 @@ if __name__ == '__main__':
     
     la_tensor = torch.tensor(
         [[ 1,3,4,2,0,0,0],
-         [ 1,3,4,4,2,0,0],
-         [ 1,2,0,0,0,0,0]]
+        #  [ 1,3,4,4,2,0,0],
+        #  [ 1,2,0,0,0,0,0]
+         ]
     )
     
     src_padding_mask = create_padding_mask(la_tensor)
@@ -79,12 +80,17 @@ if __name__ == '__main__':
     # en_tensor = torch.randint(1, 10**4,[batch_size, seq_len], dtype=int)
     en_tensor = torch.tensor(
         [[ 1,3,2,0,0,0,0],
-         [ 1,3,3,3,2,0,0],
-         [ 1,3,2,0,0,0,0]]
+        #  [ 1,3,3,3,2,0,0],
+        #  [ 1,3,2,0,0,0,0]
+         ]
     )
     tgt_padding_mask = create_padding_mask(en_tensor)
     print(f"{en_tensor.shape=}")
     print(f"{tgt_padding_mask=}")
+    
+    transfomers_decoder = nn.TransformerDecoder(
+        num_layers=1,
+    )
     
     encoder = Encoder(
         vocab_size = 10**4,
