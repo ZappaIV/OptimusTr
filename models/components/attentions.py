@@ -5,7 +5,6 @@ from torch import Tensor
 from typing import Optional
 import math
 from typing import Callable, Optional, TYPE_CHECKING, Union
-# from utility.functions import create_causal_mask, create_cross_attention_mask, create_padding_mask
 
 ####################
 #                  #
@@ -80,6 +79,8 @@ class MultiHeadAttention(nn.Module):
         scale: Optional[float] = None,
         enable_gqa: Optional[bool]=False
     ) -> tuple[Tensor, Tensor]:
+
+        from models.components.functional import clear_nan 
         
         L, S = query.size(-2), key.size(-2)
         scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
@@ -103,15 +104,9 @@ class MultiHeadAttention(nn.Module):
 
         attn_weight = query @ key.transpose(-2, -1) * scale_factor
         attn_weight += attn_bias
-        attn_weight = torch.softmax(attn_weight, dim=-1)
+        attn_weight = clear_nan(torch.softmax(attn_weight, dim=-1))
         attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
         return attn_weight @ value, attn_weight
-
-    @staticmethod
-    def clear_nan(tensor: torch.Tensor):
-        return torch.where(torch.isnan(tensor), 
-                               torch.zeros_like(tensor), 
-                               tensor)
 
     def forward(self,
                 query: Tensor,
@@ -167,25 +162,13 @@ class MultiHeadAttention(nn.Module):
         K = self.w_k(key).view(batch_size, seq_len_k, self.num_heads, self.d_k).transpose(1, 2)
         V = self.w_v(value).view(batch_size, seq_len_v, self.num_heads, self.d_k).transpose(1, 2)
 
-        if padding_mask is not None:
-            attn_mask = (padding_mask.view(batch_size, 1, 1, seq_len_q)
-                .expand(-1, self.num_heads, -1, -1)
-                .reshape(batch_size*self.num_heads, 1, seq_len_q)
-                )
-        else:
-            attn_mask = None
-                
-        if attn_mask is not None:
-            if attn_mask.size(0) == 1 and attn_mask.dim() == 3:
-                attn_mask = attn_mask.unsqueeze(0)
-            else:
-                attn_mask = attn_mask.view(batch_size, self.num_heads, -1, seq_len_q)
+        attn_mask = padding_mask
 
         # Applica l'attenzione
         context, attention_weights = self.scaled_dot_product_attention(Q, K, V, attn_mask, is_causal=is_causal)
 
         # Concatena le teste
-        context = self.clear_nan(
+        context = (
             context.transpose(1, 2).contiguous().view(batch_size, seq_len_q, self.embed_dim)
             )
 
@@ -209,7 +192,7 @@ class FeedForward(nn.Module):
     
 if __name__ == '__main__':
 
-    from utility.functions import ( generate_square_subsequent_mask, create_cross_attention_mask )
+    from models.components.functional import ( generate_square_subsequent_mask, create_cross_attention_mask )
     embed_dim = 128
     num_heads = 8
     hidden_dim = 200
@@ -238,7 +221,7 @@ if __name__ == '__main__':
     tgt_embedding = embedding(tgt)
 
     print(src_embedding.shape, tgt_embedding.shape)
-    attn_mask = generate_square_subsequent_mask(tgt.shape[-1])
+    padding_mask = create_cross_attention_mask(tgt, src)
 
     multihead_block = MultiHeadAttention(
         embed_dim=embed_dim,
@@ -249,5 +232,7 @@ if __name__ == '__main__':
         f"\n{src_embedding.shape=}"
         f"\n{tgt_embedding.shape=}",
         f"\n{multihead_block(tgt_embedding, src_embedding, src_embedding, is_causal=True).shape=}",
+        f"\n{multihead_block(tgt_embedding, src_embedding, src_embedding, padding_mask=padding_mask).shape=}",
+
     )
 

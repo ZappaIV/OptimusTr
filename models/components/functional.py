@@ -63,7 +63,8 @@ def create_causal_mask(
 def create_cross_attention_mask(
     query_seq: Tensor,
     key_seq: Tensor,
-    pad_token_id: Optional[int] = 0,
+    q_pad_token_id: Optional[int] = 0,
+    k_pad_token_id: Optional[int] = 0,
 ) -> Tensor:
     """
     Crea una maschera per cross-attention considerando il padding
@@ -77,12 +78,20 @@ def create_cross_attention_mask(
         mask: Maschera [batch_size, 1, seq_len_q, seq_len_k]
     """
     # Maschera per le posizioni non-padding nelle key
-    key_mask = (key_seq == pad_token_id).unsqueeze(1).unsqueeze(1)  # [batch_size, 1, 1, seq_len_k]
-    
+    key_mask = (key_seq == k_pad_token_id).unsqueeze(1).unsqueeze(1)  # [batch_size, 1, 1, seq_len_k]
+    query_mask = (query_seq == q_pad_token_id).unsqueeze(1).unsqueeze(1) # [batch_size, 1, 1, seq_len_v]
     # Espandi per tutte le posizioni query
     seq_len_q = query_seq.size(1)
-    mask = key_mask.expand(-1, -1, seq_len_q, -1)  # [batch_size, 1, seq_len_q, seq_len_k]
+    seq_len_k = key_seq.size(1)
+    key_mask = key_mask.expand(-1, -1, seq_len_q, -1)  # [batch_size, 1, seq_len_q, seq_len_k]
+    query_mask = query_mask.expand(-1, -1, seq_len_k, -1)  # [batch_size, 1, seq_len_k, seq_len_q]
     
-    return mask
+    key = key_mask + query_mask.transpose(-2,-1) # [batch_size, 1, seq_len_q, seq_len_k]
     
+    return key
+    
+def clear_nan(tensor: torch.Tensor):
+    return torch.where(torch.isnan(tensor), 
+                            torch.zeros_like(tensor), 
+                            tensor)
     

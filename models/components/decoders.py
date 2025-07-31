@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from transformers import BertLayer, BertConfig
+from torch import Tensor
+from typing import Optional
 
 from models.components.embeddings import PositionalEncoding
 from models.components.layers import DecoderLayer
@@ -26,11 +28,14 @@ class Decoder(nn.Module):
             ])
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, 
-                x,
-                encoder_output,
-                self_padding_mask=None,
-                cross_padding_mask=None
+    def forward( 
+        self,
+        x: Tensor,
+        memory: Tensor,
+        self_padding_mask: Optional[Tensor] = None, # Target x Target
+        cross_padding_mask: Optional[Tensor] = None, # Source x Target
+        self_is_causal: Optional[Tensor] = None,
+        cross_is_causal: Optional[Tensor] = None
                 ):
         
         # Embedding + scaling + positional encoding
@@ -40,92 +45,13 @@ class Decoder(nn.Module):
 
         # Passa attraverso tutti i layer del decoder
         for layer in self.layers:
-            x = layer(x, 
-                      encoder_output, 
-                      self_padding_mask=self_padding_mask, 
-                      cross_padding_mask=cross_padding_mask
-                      )
+            x = layer(
+                x, 
+                memory, 
+                self_padding_mask=self_padding_mask, 
+                cross_padding_mask=cross_padding_mask,
+                self_is_causal = self_is_causal,
+                cross_is_causal = cross_is_causal
+            )
 
         return x
-
-if __name__ == '__main__':
-    
-    from models.components.encoders import Encoder
-    from models.components.attentions import create_padding_mask
-    
-    embed_dim = 128
-    num_heads = 8
-    hidden_dim = 200
-    max_len = 5000
-    batch_size = 4
-    d_ff = hidden_dim
-    num_head = 8
-    
-    seq_len = 9
-    seq_len = 10
-    
-    # la_tensor = torch.randint(1, 10**4,[batch_size, seq_len], dtype=int)
-    
-    la_tensor = torch.tensor(
-        [[ 1,3,4,2,0,0,0],
-        #  [ 1,3,4,4,2,0,0],
-        #  [ 1,2,0,0,0,0,0]
-         ]
-    )
-    
-    src_padding_mask = create_padding_mask(la_tensor)
-    print(f"{la_tensor.shape=}")
-    print(f"{src_padding_mask=}")
-    
-    # en_tensor = torch.randint(1, 10**4,[batch_size, seq_len], dtype=int)
-    en_tensor = torch.tensor(
-        [[ 1,3,2,0,0,0,0],
-        #  [ 1,3,3,3,2,0,0],
-        #  [ 1,3,2,0,0,0,0]
-         ]
-    )
-    tgt_padding_mask = create_padding_mask(en_tensor)
-    print(f"{en_tensor.shape=}")
-    print(f"{tgt_padding_mask=}")
-    
-    transfomers_decoder = nn.TransformerDecoder(
-        num_layers=1,
-    )
-    
-    encoder = Encoder(
-        vocab_size = 10**4,
-        embed_dim=embed_dim,
-        num_heads=num_head,
-        n_layers=2,
-        max_len=5000,
-    )
-    
-    decoder = Decoder(
-        vocab_size = 10**4,
-        embed_dim=embed_dim,
-        num_heads=num_head,
-        n_layers=2,
-        max_len=5000,
-    )
-
-    print(encoder)
-    print(decoder)
-    
-    encoder_output = encoder(
-            la_tensor, 
-            padding_mask=src_padding_mask
-            )
-
-    
-    decoder_output = decoder(
-        en_tensor,
-        encoder_output,
-        self_padding_mask=tgt_padding_mask,
-        cross_padding_mask=src_padding_mask
-            )
-    
-    print(
-        f"\n{encoder_output.shape=}",
-        f"\n{decoder_output.shape=}"
-    )
-    del encoder, decoder
