@@ -32,11 +32,12 @@ class Decoder(nn.Module):
         self,
         x: Tensor,
         memory: Tensor,
+        mask: Optional[Tensor] = None,
         self_padding_mask: Optional[Tensor] = None, # Target x Target
         cross_padding_mask: Optional[Tensor] = None, # Source x Target
         self_is_causal: Optional[Tensor] = None,
         cross_is_causal: Optional[Tensor] = None
-                ):
+    ):
         
         # Embedding + scaling + positional encoding
         x = self.embedding(x) * math.sqrt(self.embed_dim)
@@ -47,7 +48,8 @@ class Decoder(nn.Module):
         for layer in self.layers:
             x = layer(
                 x, 
-                memory, 
+                memory,
+                mask = mask, 
                 self_padding_mask=self_padding_mask, 
                 cross_padding_mask=cross_padding_mask,
                 self_is_causal = self_is_causal,

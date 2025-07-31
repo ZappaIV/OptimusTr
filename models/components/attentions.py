@@ -108,14 +108,15 @@ class MultiHeadAttention(nn.Module):
         attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
         return attn_weight @ value, attn_weight
 
-    def forward(self,
-                query: Tensor,
-                key: Optional[Tensor],
-                value: Optional[Tensor], 
-                mask: Optional[Tensor] = None,
-                padding_mask: Optional[Tensor] = None,
-                is_causal: Optional[bool] = False
-                ):
+    def forward(
+        self,
+        query: Tensor,
+        key: Optional[Tensor],
+        value: Optional[Tensor], 
+        mask: Optional[Tensor] = None,
+        padding_mask: Optional[Tensor] = None,
+        is_causal: Optional[bool] = False
+    ):
         """
         Forward pass del Multi-Head Attention
         

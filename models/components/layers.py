@@ -63,6 +63,7 @@ class DecoderLayer(nn.Module):
         self,
         x: Tensor,
         memory: Tensor,
+        mask: Optional[Tensor] = None,
         self_padding_mask: Optional[Tensor] = None, # Target x Target
         cross_padding_mask: Optional[Tensor] = None, # Source x Target
         self_is_causal: Optional[Tensor] = None,
@@ -73,6 +74,7 @@ class DecoderLayer(nn.Module):
             x,
             x,
             x,
+            mask = mask,
             padding_mask = self_padding_mask,
             is_causal = self_is_causal
             )
