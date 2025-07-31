@@ -7,9 +7,9 @@ from typing import Optional
 
 from models.components.encoders import Encoder
 from models.components.decoders import Decoder
-from models.components.attentions import create_padding_mask
 
-class TransformerTranslation(nn.Module):
+
+class OptimusTransformer(nn.Module):
     def __init__(self, 
                  src_vocab_size, 
                  tgt_vocab_size,
@@ -19,7 +19,7 @@ class TransformerTranslation(nn.Module):
                  max_len=5000,
                  dropout=0.1,
                  ):
-        super(TransformerTranslation, self).__init__()
+        super(OptimusTransformer, self).__init__()
         print(f"{src_vocab_size=}, {tgt_vocab_size=}")
         
         
@@ -56,16 +56,14 @@ class TransformerTranslation(nn.Module):
         self, 
         src: Tensor, 
         tgt: Tensor,
-        src_mask: Optional[Tensor] = None,
         tgt_mask: Optional[Tensor] = None,
         memory_mask: Optional[Tensor] = None,
-        src_key_padding_mask: Optional[torch.Tensor] = None,
-        tgt_key_padding_mask: Optional[torch.Tensor] = None,
-        memory_key_padding_mask: Optional[Tensor] = None,
-        src_is_causal: Optional[bool] = False,
+        tgt_padding_mask: Optional[torch.Tensor] = None,
+        memory_padding_mask: Optional[Tensor] = None,
+        cross_padding_mask: Optional[Tensor] = None,
+        cross_is_causal: Optional[bool] = False,
         tgt_is_causal: Optional[bool] = False,
         memory_is_causal: bool = False,
-        batch_first = True
     ):
         
         # pre-checks
@@ -73,41 +71,51 @@ class TransformerTranslation(nn.Module):
         if (src.size(0) != tgt.size(0)) and is_batched:
             raise RuntimeError("the batch number of src and tgt must be equal")
 
-        # Crea le maschere  
               
         # Encoding
         memory = self.encoder(
             src,
-            mask = src_mask,
-            src_key_padding_mask=src_key_padding_mask,
-            is_causal=src_is_causal,
-
+            mask = memory_mask,
+            src_padding_mask=memory_padding_mask,
+            self_is_causal=memory_is_causal
         )
 
         # Decoding
         decoder_output = self.decoder(
             tgt,
             memory,
-            self_padding_mask = tgt_key_padding_mask,
-            cross_padding_mask = src_key_padding_mask
+            mask = tgt_mask,
+            self_padding_mask = tgt_padding_mask,
+            cross_padding_mask = cross_padding_mask,
+            self_is_causal = tgt_is_causal,
+            cross_is_causal = cross_is_causal
             )
 
         # Proiezione finale
-        output = self.output_projection(decoder_output)
+        logits = self.output_projection(decoder_output)
 
-        # soft_max_output = F.softmax(output,2)
+        logits = F.softmax(logits,-1)
 
-        return output
+        return logits
 
-    def generate(self, src, max_len=100, start_token=1, end_token=2):
+    def generate(
+        self,
+        src: Tensor,
+        max_len: int = 100,
+        start_token: int = 1,
+        end_token: int = 2
+    ):
         """
         Genera una traduzione dato un input source
         """
         self.eval()
         with torch.no_grad():
             # Encoding del source
-            src_mask = ( src == 0)
-            encoder_output = self.encoder(src, src_mask)
+            memory = self.encoder(
+                src,
+                src_padding_mask = None,
+                self_is_causal = True
+            )
 
             # Inizializza il target con il token di start
             batch_size = src.size(0)
@@ -116,15 +124,20 @@ class TransformerTranslation(nn.Module):
             for _ in range(max_len):
                 # TODO: fix masking for generation
                 # Crea la maschera per il target corrente
-                tgt_mask = create_padding_mask(tgt)
+                cross_padding_mask = create_cross_attention_mask(tgt, src)
 
                 # Decodifica
-                decoder_output = self.decoder(tgt, encoder_output, tgt_mask, src_mask)
+                decoder_output = self.decoder(
+                    tgt,
+                    memory,
+                    self_is_causal=True,
+                    cross_padding_mask=cross_padding_mask
+                )
 
                 # Predizione del prossimo token
                 next_token_logits = F.softmax(
                     self.output_projection(decoder_output[:, -1, :]),
-                    2
+                    -1
                     )
                 next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
 
@@ -139,6 +152,9 @@ class TransformerTranslation(nn.Module):
 
 
 if __name__ == '__main__':
+    
+    from models.components.functional import create_cross_attention_mask
+    
     config = {
         'src_vocab_size': 10**4,
         'tgt_vocab_size': 11**4,
@@ -156,7 +172,7 @@ if __name__ == '__main__':
     
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
-    model = TransformerTranslation(
+    model = OptimusTransformer(
     src_vocab_size=config['src_vocab_size'],
     tgt_vocab_size=config['tgt_vocab_size'],
     n_layers=config['n_layers'],
@@ -184,17 +200,25 @@ if __name__ == '__main__':
         
     # en_tensor = torch.randint(1, 10**4,[batch_size, seq_len], dtype=int)
     tgt = torch.tensor(
-        [[ 1,3,2,0,0,0,0],
-         [ 1,3,3,3,2,0,0],
-         [ 1,3,2,0,0,0,0]]
+        [[ 1,3,2,0,0,0,0,0],
+         [ 1,3,3,3,2,0,0,0],
+         [ 1,3,2,0,0,0,0,0]]
     )
     
     start_seq = torch.tensor([[1],[1],[1]])
     
+    cross_padding_mask = create_cross_attention_mask(tgt, src)
+    
     # Test forward pass
     print("=== Test Forward Pass ===")
     with torch.no_grad():
-        output = model(src, tgt)
+        output = model(
+            src,
+            tgt,
+            cross_padding_mask = cross_padding_mask,
+            tgt_is_causal = True,
+            memory_is_causal = True
+        )
         print(f"Input source shape: {src.shape}")
         print(f"Input target shape: {tgt.shape}")
         print(f"Output shape: {output.shape}")  # [batch_size, tgt_len, vocab_size]
