@@ -80,7 +80,7 @@ class MultiHeadAttention(nn.Module):
         enable_gqa: Optional[bool]=False
     ) -> tuple[Tensor, Tensor]:
 
-        from models.components.functional import clear_nan 
+        from src.transformers.models.functionals import clear_nan 
         
         L, S = query.size(-2), key.size(-2)
         scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
@@ -193,7 +193,7 @@ class FeedForward(nn.Module):
     
 if __name__ == '__main__':
 
-    from models.components.functional import ( generate_square_subsequent_mask, create_cross_attention_mask )
+    from src.transformers.models.functionals import ( generate_square_subsequent_mask, create_cross_attention_mask )
     embed_dim = 128
     num_heads = 8
     hidden_dim = 200

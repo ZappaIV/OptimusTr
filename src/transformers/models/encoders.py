@@ -6,8 +6,8 @@ from torch import Tensor
 from transformers import BertLayer, BertConfig
 from typing import Optional 
 
-from models.components.embeddings import PositionalEncoding
-from models.components.layers import EncoderLayer
+from src.transformers.models.embeddings import PositionalEncoding
+from src.transformers.models.layers import EncoderLayer
 
 class Encoder(nn.Module):
     def __init__(

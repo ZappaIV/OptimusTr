@@ -6,8 +6,8 @@ from transformers import BertLayer, BertConfig
 from torch import Tensor
 from typing import Optional
 
-from models.components.embeddings import PositionalEncoding
-from models.components.layers import DecoderLayer
+from src.transformers.models.embeddings import PositionalEncoding
+from src.transformers.models.layers import DecoderLayer
 
 class Decoder(nn.Module):
     def __init__(self,

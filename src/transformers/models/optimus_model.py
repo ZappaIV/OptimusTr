@@ -5,8 +5,8 @@ from torch import Tensor
 import math
 from typing import Optional
 
-from models.components.encoders import Encoder
-from models.components.decoders import Decoder
+from src.transformers.models.encoders import Encoder
+from src.transformers.models.decoders import Decoder
 
 
 class OptimusTransformer(nn.Module):
@@ -108,6 +108,8 @@ class OptimusTransformer(nn.Module):
         """
         Genera una traduzione dato un input source
         """
+        from src.transformers.models.functionals import create_cross_attention_mask
+    
         self.eval()
         with torch.no_grad():
             # Encoding del source
@@ -153,7 +155,7 @@ class OptimusTransformer(nn.Module):
 
 if __name__ == '__main__':
     
-    from models.components.functional import create_cross_attention_mask
+    from src.transformers.models.functionals import create_cross_attention_mask
     
     config = {
         'src_vocab_size': 10**4,

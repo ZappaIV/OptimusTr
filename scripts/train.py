@@ -6,9 +6,9 @@ import numpy as np
 
 # import training.training_func
 
-from training.training_func import train_epoch, evaluate, save_checkpoint, load_checkpoint, LabelSmoothingLoss, NoamScheduler
-from models.optimus_model import TransformerTranslation
-from tokenizers_utl.dataloaders import L2NDataset, collate_fn
+from src.training.functionals import train_epoch, evaluate, save_checkpoint, load_checkpoint, LabelSmoothingLoss, NoamScheduler
+from src.transformers.models.optimus_model import TransformerTranslation
+from src.data.dataloaders import L2NDataset, collate_fn
 from torch.utils.data import Dataset, DataLoader
 
 device = "cuda" if torch.cuda.is_available() else "cpu"

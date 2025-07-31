@@ -22,7 +22,7 @@
             "name": "Python Debugger: Module Components",
             "type": "debugpy",
             "request": "launch",
-            "module": "models.components.${fileBasenameNoExtension}",
+            "module": "src.transformers.models.${fileBasenameNoExtension}",
             "justMyCode": false
         },
     ]

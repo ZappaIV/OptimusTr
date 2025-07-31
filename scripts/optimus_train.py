@@ -6,9 +6,9 @@ import numpy as np
 
 # import training.training_func
 
-from training.training_func import train_epoch, evaluate, save_checkpoint, load_checkpoint, LabelSmoothingLoss, NoamScheduler
-from models.optimus_model import TransformerTranslation
-from tokenizers_utl.dataloaders import TranslationDataset, trl_nn_collate_fn
+from src.training.functionals import train_epoch, evaluate, save_checkpoint, load_checkpoint, LabelSmoothingLoss, NoamScheduler
+from src.transformers.models.optimus_model import TransformerTranslation
+from src.data.dataloaders import TranslationDataset, trl_nn_collate_fn
 from torch.utils.data import Dataset, DataLoader
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -139,13 +139,13 @@ for epoch in range(config['num_epochs']):
     if val_loss < best_val_loss:
         best_val_loss = val_loss
         save_checkpoint(model, optimizer, scheduler, epoch, val_loss, 
-                        'best_transformer_model.pt')
+                        'models/checkpoints/best_transformer_model.pt')
         print("Nuovo miglior modello salvato!")
     
     # Salva checkpoint periodico
     if (epoch + 1) % 10 == 0:
         save_checkpoint(model, optimizer, scheduler, epoch, val_loss, 
-                        f'transformer_checkpoint_epoch_{epoch+1}.pt')
+                        f'models/checkpoints/transformer_checkpoint_epoch_{epoch+1}.pt')
 
 print("Training completato!")
 

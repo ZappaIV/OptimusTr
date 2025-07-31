@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from typing import Optional
-from models.components.attentions import MultiHeadAttention, FeedForward
+from src.transformers.models.attentions import MultiHeadAttention, FeedForward
 
 
 class EncoderLayer(nn.Module):
