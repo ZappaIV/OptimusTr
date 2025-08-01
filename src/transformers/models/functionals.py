@@ -12,7 +12,7 @@ def generate_square_subsequent_mask(
     The masked positions are filled with float('-inf'). Unmasked positions are filled with float(0.0).
     """
     return torch.triu(
-        torch.full((sz, sz), float("-inf"), dtype=dtype, device=device),
+        torch.full((sz, sz), -1e9, dtype=dtype, device=device),
         diagonal=1,
     )
     
@@ -41,7 +41,9 @@ def create_padding_mask(
     # seq_len = seq.size(1)
     # mask = mask.expand(-1, -1, seq_len, -1)  # [batch_size, 1, seq_len, seq_len]
     
-    return mask
+    return torch.zeros_like(padding_mask, dtype=torch.float).masked_fill_(
+              padding_mask, -1e9
+            )
 
 def create_causal_mask(
     seq_len: int, 
@@ -88,7 +90,9 @@ def create_cross_attention_mask(
     
     key = key_mask + query_mask.transpose(-2,-1) # [batch_size, 1, seq_len_q, seq_len_k]
     
-    return key
+    return torch.zeros_like(key, dtype=torch.float).masked_fill_(
+              key, -1e9
+            )
     
 def clear_nan(tensor: torch.Tensor):
     return torch.where(torch.isnan(tensor), 

@@ -89,12 +89,12 @@ class MultiHeadAttention(nn.Module):
         if is_causal:
             assert attn_mask is None
             temp_mask = torch.ones(L, S, dtype=torch.bool).tril(diagonal=0)
-            attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
+            attn_bias.masked_fill_(temp_mask.logical_not(), -1e9)
             attn_bias.to(query.dtype)
 
         if attn_mask is not None:
             if attn_mask.dtype == torch.bool:
-                attn_bias.masked_fill_(attn_mask.logical_not(), float("-inf"))
+                attn_bias.masked_fill_(attn_mask.logical_not(), -1e9)
             else:
                 attn_bias = attn_mask + attn_bias
 
@@ -104,7 +104,7 @@ class MultiHeadAttention(nn.Module):
 
         attn_weight = query @ key.transpose(-2, -1) * scale_factor
         attn_weight += attn_bias
-        attn_weight = clear_nan(torch.softmax(attn_weight, dim=-1))
+        attn_weight = clear_nan(torch.softmax(attn_weight, dim=-1)) + 1e-12
         attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
         return attn_weight @ value, attn_weight
 
@@ -149,13 +149,13 @@ class MultiHeadAttention(nn.Module):
         #         target_type=torch.float,  
         # )
 
-        padding_mask = F._canonical_mask(
-                mask=padding_mask,
-                mask_name='padding_mask',
-                other_type=F._none_or_dtype(padding_mask),
-                other_name="mask",
-                target_type=torch.float,  
-        )
+        # padding_mask = F._canonical_mask(
+        #         mask=padding_mask,
+        #         mask_name='padding_mask',
+        #         other_type=F._none_or_dtype(padding_mask),
+        #         other_name="mask",
+        #         target_type=torch.float,  
+        # )
 
         
         # Trasformazioni lineari e reshape per multi-head

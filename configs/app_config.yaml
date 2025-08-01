@@ -1,0 +1,19 @@
+model:
+  name: ModelName
+  version: 1.0.0
+  debug: false
+parameters:
+  src_vocab_size: null
+  tgt_vocab_size: null
+  embed_dim: 768
+  num_heads: 16
+  n_layers: 8
+  hidden_dim: 1024
+  d_ff: 1024
+  max_seq_length: 10000
+  dropout: 0.1
+  batch_size: 32
+  num_epochs: 50
+  warmup_steps: 4000
+  label_smoothing: 0.1
+configuration: {}
