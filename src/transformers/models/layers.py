@@ -21,9 +21,9 @@ class EncoderLayer(nn.Module):
     def forward(
         self, 
         x: Tensor,
-        mask: Optional[Tensor] = None,
-        src_padding_mask: Optional[Tensor] = None,
-        self_is_causal: Optional[Tensor] = False
+        src_mask: Optional[Tensor] = None,
+        src_key_padding_mask: Optional[Tensor] = None,
+        src_is_causal: Optional[Tensor] = False
     ) -> Tensor:
         # Self-attention con connessione residua
         # x = x.transpose(0,1)
@@ -31,9 +31,9 @@ class EncoderLayer(nn.Module):
             x,
             x,
             x,
-            mask,
-            padding_mask = src_padding_mask,
-            is_causal = self_is_causal
+            attn_mask = src_mask, # None
+            padding_mask = src_key_padding_mask, # Filled
+            is_causal = src_is_causal
             )
         x = self.norm1(x + self.dropout(attn_output))
 
@@ -63,20 +63,21 @@ class DecoderLayer(nn.Module):
         self,
         x: Tensor,
         memory: Tensor,
-        mask: Optional[Tensor] = None,
-        self_padding_mask: Optional[Tensor] = None, # Target x Target
-        cross_padding_mask: Optional[Tensor] = None, # Source x Target
-        self_is_causal: Optional[Tensor] = None,
-        cross_is_causal: Optional[Tensor] = None
+        tgt_mask: Optional[Tensor] = None,
+        tgt_key_padding_mask: Optional[Tensor] = None, # Target x Target
+        memory_mask: Optional[Tensor] = None, 
+        memory_key_padding_mask: Optional[Tensor] = None, # Source x Target
+        tgt_is_causal: Optional[Tensor] = None,
+        memory_is_causal: Optional[Tensor] = None
     ):
         # Self-attention mascherata
         attn_output = self.self_attention(
             x,
             x,
             x,
-            mask = mask,
-            padding_mask = self_padding_mask,
-            is_causal = self_is_causal
+            attn_mask = tgt_mask, # Causal
+            padding_mask = tgt_key_padding_mask,
+            is_causal = tgt_is_causal # None
             )
         x = self.norm1(x + self.dropout(attn_output))
 
@@ -85,8 +86,9 @@ class DecoderLayer(nn.Module):
             x,
             memory, 
             memory, 
-            padding_mask = cross_padding_mask,
-            is_causal = cross_is_causal
+            attn_mask = memory_mask, # None
+            padding_mask = memory_key_padding_mask, # FIlled
+            is_causal = memory_is_causal
             )
         x = self.norm2(x + self.dropout(cross_attn_output))
 

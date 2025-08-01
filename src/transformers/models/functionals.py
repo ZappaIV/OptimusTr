@@ -59,7 +59,7 @@ def create_causal_mask(
     Returns:
         mask: Maschera causale [1, 1, seq_len, seq_len]
     """
-    mask = torch.tril(torch.ones(seq_len, seq_len, device=device))
+    mask = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=1).bool()
     return mask # .unsqueeze(0).unsqueeze(0)
 
 def create_cross_attention_mask(
@@ -98,4 +98,29 @@ def clear_nan(tensor: torch.Tensor):
     return torch.where(torch.isnan(tensor), 
                             torch.zeros_like(tensor), 
                             tensor)
+    
+def mask_fill_combined(
+    attention_scores: Tensor,
+    padding_mask: Optional[Tensor] = None,
+    attn_mask: Optional[Tensor] = None
+):
+    # attention_scores: [batch, num_heads, tgt_len, tgt_len]
+    # tgt_mask: [tgt_len, tgt_len] - causale
+    # tgt_key_padding_mask: [batch, tgt_len] - padding
+
+    batch_size, num_heads, tgt_len, _ = attention_scores.shape
+    
+    # 1. APPLICA CAUSAL MASK (stessa per tutto il batch e tutte le teste)
+    if attn_mask is not None:
+        # Espandi per batch e heads: [1, 1, tgt_len, tgt_len]
+        expanded_tgt_mask = attn_mask.unsqueeze(0).unsqueeze(0)
+        attention_scores = attention_scores.masked_fill(expanded_tgt_mask, -1e9)
+    
+    # 2. APPLICA PADDING MASK (diversa per ogni batch item)
+    if padding_mask is not None:
+        # Espandi per heads e query positions: [batch, 1, 1, tgt_len] 
+        expanded_padding_mask = padding_mask.unsqueeze(1).unsqueeze(2)
+        attention_scores = attention_scores.masked_fill(expanded_padding_mask, -1e9)
+    
+    return attention_scores
     

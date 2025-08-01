@@ -7,7 +7,7 @@ from typing import Optional
 
 from src.transformers.models.encoders import Encoder
 from src.transformers.models.decoders import Decoder
-
+from src.transformers.models.functionals import create_causal_mask
 
 class OptimusTransformer(nn.Module):
     def __init__(self, 
@@ -57,13 +57,14 @@ class OptimusTransformer(nn.Module):
         src: Tensor, 
         tgt: Tensor,
         tgt_mask: Optional[Tensor] = None,
+        src_mask: Optional[Tensor] = None,
         memory_mask: Optional[Tensor] = None,
-        tgt_padding_mask: Optional[torch.Tensor] = None,
-        memory_padding_mask: Optional[Tensor] = None,
-        cross_padding_mask: Optional[Tensor] = None,
-        cross_is_causal: Optional[bool] = False,
+        tgt_key_padding_mask: Optional[torch.Tensor] = None,
+        src_key_padding_mask: Optional[torch.Tensor] = None,
+        memory_key_padding_mask: Optional[Tensor] = None,
+        memory_is_causal: Optional[bool] = False,
         tgt_is_causal: Optional[bool] = False,
-        memory_is_causal: bool = False,
+        src_is_causal: Optional[bool] = False,
     ):
         
         # pre-checks
@@ -75,20 +76,21 @@ class OptimusTransformer(nn.Module):
         # Encoding
         memory = self.encoder(
             src,
-            mask = memory_mask,
-            src_padding_mask=memory_padding_mask,
-            self_is_causal=memory_is_causal
+            src_mask = src_mask,
+            src_key_padding_mask=src_key_padding_mask,
+            src_is_causal=src_is_causal
         )
 
         # Decoding
         decoder_output = self.decoder(
             tgt,
             memory,
-            mask = tgt_mask,
-            self_padding_mask = tgt_padding_mask,
-            cross_padding_mask = cross_padding_mask,
-            self_is_causal = tgt_is_causal,
-            cross_is_causal = cross_is_causal
+            tgt_mask = tgt_mask, 
+            tgt_key_padding_mask=tgt_key_padding_mask,
+            memory_mask=memory_mask,
+            memory_key_padding_mask=memory_key_padding_mask,
+            tgt_is_causal = tgt_is_causal,
+            memory_is_causal = memory_is_causal
             )
 
         # Proiezione finale
@@ -113,10 +115,13 @@ class OptimusTransformer(nn.Module):
         self.eval()
         with torch.no_grad():
             # Encoding del source
+
+            src_key_padding_mask = (src == 0)
+            memory_key_padding_mask = src_key_padding_mask
+
             memory = self.encoder(
                 src,
-                src_padding_mask = None,
-                self_is_causal = True
+                src_key_padding_mask=src_key_padding_mask
             )
 
             # Inizializza il target con il token di start
@@ -124,16 +129,17 @@ class OptimusTransformer(nn.Module):
             tgt = torch.full((batch_size, 1), start_token, device=src.device)
 
             for _ in range(max_len):
-                # TODO: fix masking for generation
                 # Crea la maschera per il target corrente
-                cross_padding_mask = create_cross_attention_mask(tgt, src)
+                tgt_key_padding_mask = (tgt == 0)
+                tgt_mask = create_causal_mask(tgt.size(-1))
 
                 # Decodifica
                 decoder_output = self.decoder(
                     tgt,
                     memory,
-                    self_is_causal=True,
-                    cross_padding_mask=cross_padding_mask
+                    tgt_mask=tgt_mask,
+                    tgt_key_padding_mask=tgt_key_padding_mask,
+                    memory_key_padding_mask=memory_key_padding_mask
                 )
 
                 # Predizione del prossimo token
@@ -154,8 +160,6 @@ class OptimusTransformer(nn.Module):
 
 
 if __name__ == '__main__':
-    
-    from src.transformers.models.functionals import create_cross_attention_mask
     
     config = {
         'src_vocab_size': 10**4,
@@ -209,7 +213,10 @@ if __name__ == '__main__':
     
     start_seq = torch.tensor([[1],[1],[1]])
     
-    cross_padding_mask = create_cross_attention_mask(tgt, src)
+    src_key_padding_mask = (src == 0)
+    tgt_key_padding_mask = (tgt == 0)
+    memory_key_padding_mask = src_key_padding_mask
+    tgt_mask = create_causal_mask(tgt.size(-1))
     
     # Test forward pass
     print("=== Test Forward Pass ===")
@@ -217,9 +224,10 @@ if __name__ == '__main__':
         output = model(
             src,
             tgt,
-            cross_padding_mask = cross_padding_mask,
-            tgt_is_causal = True,
-            memory_is_causal = True
+            tgt_mask=tgt_mask,
+            src_key_padding_mask=src_key_padding_mask,
+            tgt_key_padding_mask=tgt_key_padding_mask,
+            memory_key_padding_mask=memory_key_padding_mask
         )
         print(f"Input source shape: {src.shape}")
         print(f"Input target shape: {tgt.shape}")

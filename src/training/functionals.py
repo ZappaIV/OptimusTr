@@ -6,7 +6,7 @@ from typing import Optional
 import time, math
 from tqdm import tqdm
 
-from src.transformers.models.functionals import create_cross_attention_mask
+from src.transformers.models.functionals import create_cross_attention_mask, create_padding_mask
 
 class LabelSmoothingLoss(nn.Module):
     """Label smoothing per migliorare la generalizzazione"""
@@ -145,11 +145,12 @@ def train_epoch(
         src = la_input
         tgt = en_input
         
-        cross_padding_mask = create_cross_attention_mask(
-            query_seq=tgt,
-            key_seq=src
-        )
+        tgt_input = tgt[:-1]
+        tgt_output = tgt[1:]
 
+        tgt_mask = create_cross_attention_mask(tgt_input, tgt_input)
+        src_padding_mask = create_padding_mask(src),
+        tgt_padding_mask = create_padding_mask(tgt_input)
         # Teacher forcing: input del decoder senza l'ultimo token
         # Target: output atteso senza il primo token (SOS)
         tgt_output = en_input[:, 1:]
@@ -157,10 +158,11 @@ def train_epoch(
         # Forward pass
         logits = model(
             src, 
-            tgt,
-            cross_padding_mask = cross_padding_mask,
-            tgt_is_causal = True,
-            memory_is_causal = True
+            tgt_input,
+            tgt_mask=tgt_mask,
+            src_key_padding_mask=src_padding_mask,
+            tgt_key_padding_mask=tgt_padding_mask,
+            memory_key_padding_mask=src_padding_mask 
         )
 
         # Calcola loss

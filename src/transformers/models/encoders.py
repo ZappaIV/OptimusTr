@@ -32,9 +32,9 @@ class Encoder(nn.Module):
     def forward(
         self,
         x: Tensor,
-        mask: Optional[Tensor] = None,
-        src_padding_mask: Optional[Tensor] = None,
-        self_is_causal: Optional[bool] = False
+        src_mask: Optional[Tensor] = None,
+        src_key_padding_mask: Optional[Tensor] = None,
+        src_is_causal: Optional[Tensor] = False
     ) -> Tensor:
         # Embedding + scaling + positional encoding
         x = self.embedding(x) * math.sqrt(self.embed_dim)
@@ -45,9 +45,9 @@ class Encoder(nn.Module):
         for layer in self.layers:
             x = layer(
                 x,
-                mask = mask,
-                src_padding_mask=src_padding_mask,
-                self_is_causal = self_is_causal
+                src_mask = src_mask,
+                src_key_padding_mask=src_key_padding_mask,
+                src_is_causal = src_is_causal
             )
 
         return x

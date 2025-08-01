@@ -74,13 +74,14 @@ class MultiHeadAttention(nn.Module):
         key: Tensor, 
         value: Tensor,
         attn_mask: Optional[Tensor] = None, 
+        padding_mask: Optional[Tensor] = None,
         dropout_p: Optional[float] = 0.0,
         is_causal: Optional[bool] = False,
         scale: Optional[float] = None,
         enable_gqa: Optional[bool]=False
     ) -> tuple[Tensor, Tensor]:
 
-        from src.transformers.models.functionals import clear_nan 
+        from src.transformers.models.functionals import clear_nan, mask_fill_combined 
         
         L, S = query.size(-2), key.size(-2)
         scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
@@ -92,20 +93,20 @@ class MultiHeadAttention(nn.Module):
             attn_bias.masked_fill_(temp_mask.logical_not(), -1e9)
             attn_bias.to(query.dtype)
 
-        if attn_mask is not None:
-            if attn_mask.dtype == torch.bool:
-                attn_bias.masked_fill_(attn_mask.logical_not(), -1e9)
-            else:
-                attn_bias = attn_mask + attn_bias
-
         if enable_gqa:
             key = key.repeat_interleave(query.size(-3)//key.size(-3), -3)
             value = value.repeat_interleave(query.size(-3)//value.size(-3), -3)
 
         attn_weight = query @ key.transpose(-2, -1) * scale_factor
+        attn_weight = mask_fill_combined(
+            attention_scores=attn_weight,
+            attn_mask=attn_mask,
+            padding_mask=padding_mask
+        )        
         attn_weight += attn_bias
         attn_weight = clear_nan(torch.softmax(attn_weight, dim=-1)) + 1e-12
         attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
+        
         return attn_weight @ value, attn_weight
 
     def forward(
@@ -113,7 +114,7 @@ class MultiHeadAttention(nn.Module):
         query: Tensor,
         key: Optional[Tensor],
         value: Optional[Tensor], 
-        mask: Optional[Tensor] = None,
+        attn_mask: Optional[Tensor] = None,
         padding_mask: Optional[Tensor] = None,
         is_causal: Optional[bool] = False
     ):
@@ -140,33 +141,17 @@ class MultiHeadAttention(nn.Module):
 
         seq_len_k = key.size(1)
         seq_len_v = value.size(1)
-
-        # mask = F._canonical_mask(
-        #         mask=mask,
-        #         mask_name='mask',
-        #         other_type=F._none_or_dtype(mask),
-        #         other_name="mask",
-        #         target_type=torch.float,  
-        # )
-
-        # padding_mask = F._canonical_mask(
-        #         mask=padding_mask,
-        #         mask_name='padding_mask',
-        #         other_type=F._none_or_dtype(padding_mask),
-        #         other_name="mask",
-        #         target_type=torch.float,  
-        # )
-
         
         # Trasformazioni lineari e reshape per multi-head
         Q = self.w_q(query).view(batch_size, seq_len_q, self.num_heads, self.d_k).transpose(1, 2)
         K = self.w_k(key).view(batch_size, seq_len_k, self.num_heads, self.d_k).transpose(1, 2)
         V = self.w_v(value).view(batch_size, seq_len_v, self.num_heads, self.d_k).transpose(1, 2)
 
-        attn_mask = padding_mask
-
         # Applica l'attenzione
-        context, attention_weights = self.scaled_dot_product_attention(Q, K, V, attn_mask, is_causal=is_causal)
+        context, attention_weights = self.scaled_dot_product_attention(
+            Q, K, V, 
+            attn_mask, padding_mask=padding_mask,
+            is_causal=is_causal)
 
         # Concatena le teste
         context = (
@@ -222,7 +207,7 @@ if __name__ == '__main__':
     tgt_embedding = embedding(tgt)
 
     print(src_embedding.shape, tgt_embedding.shape)
-    padding_mask = create_cross_attention_mask(tgt, src)
+    memory_padding_mask = (src == 0)
 
     multihead_block = MultiHeadAttention(
         embed_dim=embed_dim,
@@ -232,8 +217,8 @@ if __name__ == '__main__':
     print(
         f"\n{src_embedding.shape=}"
         f"\n{tgt_embedding.shape=}",
-        f"\n{multihead_block(tgt_embedding, src_embedding, src_embedding, is_causal=True).shape=}",
-        f"\n{multihead_block(tgt_embedding, src_embedding, src_embedding, padding_mask=padding_mask).shape=}",
+        f"\n{multihead_block(tgt_embedding, src_embedding, src_embedding, is_causal=False).shape=}",
+        f"\n{multihead_block(tgt_embedding, src_embedding, src_embedding, padding_mask=memory_padding_mask).shape=}",
 
     )
 

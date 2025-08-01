@@ -32,11 +32,12 @@ class Decoder(nn.Module):
         self,
         x: Tensor,
         memory: Tensor,
-        mask: Optional[Tensor] = None,
-        self_padding_mask: Optional[Tensor] = None, # Target x Target
-        cross_padding_mask: Optional[Tensor] = None, # Source x Target
-        self_is_causal: Optional[Tensor] = None,
-        cross_is_causal: Optional[Tensor] = None
+        tgt_mask: Optional[Tensor] = None,
+        tgt_key_padding_mask: Optional[Tensor] = None, # Target x Target
+        memory_mask: Optional[Tensor] = None, 
+        memory_key_padding_mask: Optional[Tensor] = None, # Source x Target
+        tgt_is_causal: Optional[Tensor] = None,
+        memory_is_causal: Optional[Tensor] = None
     ):
         
         # Embedding + scaling + positional encoding
@@ -49,11 +50,12 @@ class Decoder(nn.Module):
             x = layer(
                 x, 
                 memory,
-                mask = mask, 
-                self_padding_mask=self_padding_mask, 
-                cross_padding_mask=cross_padding_mask,
-                self_is_causal = self_is_causal,
-                cross_is_causal = cross_is_causal
+                tgt_mask = tgt_mask, 
+                tgt_key_padding_mask=tgt_key_padding_mask,
+                memory_mask=memory_mask,
+                memory_key_padding_mask=memory_key_padding_mask,
+                tgt_is_causal = tgt_is_causal,
+                memory_is_causal = memory_is_causal
             )
 
         return x
