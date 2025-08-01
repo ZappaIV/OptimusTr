@@ -92,10 +92,8 @@ model = OptimusTransformer(
     n_layers=config['n_layers'],
     embed_dim=config['embed_dim'],
     num_heads=config['num_heads'],
-    d_ff=config['d_ff'],
     max_len=config['max_seq_length'],
     dropout=config['dropout'],
-    use_nn_mha=True
 
 ).to(device)
 print(model)
