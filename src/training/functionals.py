@@ -195,6 +195,134 @@ def train_epoch(
     avg_loss = total_loss / total_tokens
     return avg_loss
 
+
+def evaluate_transformers(
+    model: nn.Module,
+    dataloader: DataLoader,
+    criterion: nn.Module,
+    device: torch.device
+):
+    """Valutazione del modello"""
+    model.eval()
+    total_loss = 0
+    total_tokens = 0
+
+    with torch.no_grad():
+        for batch_idx, batch_data in enumerate(dataloader):
+            if isinstance(batch_data, tuple):
+                la_input, en_input = batch_data[0], batch_data[1]
+                la_input, en_input = la_input.to(device), en_input.to(device)
+            elif isinstance(batch_data, dict):
+                la_input = batch_data['src'].to(device)
+                en_input = batch_data['tgt'].to(device)
+
+
+            src = la_input
+            tgt = en_input
+            
+            tgt_input = tgt[:-1]
+            tgt_output = tgt[1:]
+
+            # Teacher forcing: input del decoder senza l'ultimo token
+            # Target: output atteso senza il primo token (SOS)
+            tgt_output = en_input[:, 1:]
+
+            # Forward pass
+            logits = model(
+                src, 
+                tgt_input
+            )
+
+
+            output_flat = logits.reshape(-1, logits.size(-1))
+            tgt_flat = tgt_output.reshape(-1)
+
+            loss = criterion(output_flat, tgt_flat)
+
+            num_tokens = (tgt_output != 0).sum().item()
+            total_loss += loss.item() * num_tokens
+            total_tokens += num_tokens
+
+    avg_loss = total_loss / total_tokens
+    perplexity = math.exp(avg_loss)
+    return avg_loss, perplexity
+
+
+
+def train_epoch_transformers(
+    model: nn.Module,
+    dataloader: DataLoader, 
+    criterion: nn.CrossEntropyLoss, 
+    optimizer: torch.optim.Adam, 
+    scheduler: NoamScheduler,
+    device: torch.device,
+    epoch: int
+):
+    """Training per una singola epoca"""
+    model.train()
+    total_loss = 0
+    total_tokens = 0
+    start_time = time.time()
+    # batch_idx = 0
+    # for la_input, en_input in tqdm(dataloader, desc="Training", unit="batch"):
+    for batch_idx, batch_data in enumerate(dataloader):
+        if isinstance(batch_data, tuple):
+            la_input, en_input = batch_data[0], batch_data[1]
+            la_input, en_input = la_input.to(device), en_input.to(device)
+        elif isinstance(batch_data, dict):
+            la_input = batch_data['src'].to(device)
+            en_input = batch_data['tgt'].to(device)
+
+        src = la_input
+        tgt = en_input
+        
+        tgt_input = tgt[:-1]
+        tgt_output = tgt[1:]
+
+        # Teacher forcing: input del decoder senza l'ultimo token
+        # Target: output atteso senza il primo token (SOS)
+        tgt_output = en_input[:, 1:]
+
+        # Forward pass
+        logits = model(
+            src, 
+            tgt_input
+        )
+
+        # Calcola loss
+        output_flat = logits.reshape(-1, logits.size(-1))
+        tgt_flat = tgt_output.reshape(-1)
+
+        # Maschera i padding tokens
+        loss = criterion(output_flat, tgt_flat)
+
+        # Backward pass
+        optimizer.zero_grad()
+        loss.backward()
+
+        # Gradient clipping
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+        optimizer.step()
+        scheduler.step()
+
+        # Statistiche
+        num_tokens = (tgt_output != 0).sum().item()
+        total_loss += loss.item() * num_tokens
+        total_tokens += num_tokens
+        if batch_idx % 250 == 0:
+            elapsed_time = time.time() - start_time
+            lr = scheduler.get_lr()
+            print(f'Epoch {epoch}, Batch {batch_idx}, Loss: {loss.item():.4f}, '
+                  f'LR: {lr:.2e}, Tokens/sec: {total_tokens/elapsed_time:.0f}')
+        # batch_idx += 1
+
+
+    avg_loss = total_loss / total_tokens
+    return avg_loss
+
+
+
 def save_checkpoint(
     model: nn.Module,
     optimizer: torch.optim.Adam,

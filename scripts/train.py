@@ -6,8 +6,8 @@ import numpy as np
 
 # import training.training_func
 
-from src.training.functionals import train_epoch, evaluate, save_checkpoint, load_checkpoint, LabelSmoothingLoss, NoamScheduler
-from src.transformers.models.optimus_model import TransformerTranslation
+from src.training.functionals import train_epoch_transformers, evaluate_transformers, save_checkpoint, NoamScheduler
+from src.transformers.models.transformer import TranslationModel
 from src.data.dataloaders import L2NDataset, collate_fn
 from torch.utils.data import Dataset, DataLoader
 
@@ -83,18 +83,9 @@ print(la_tensor.shape, en_tensor.shape, la_tensor[0], en_tensor[0])
 print(f"Config: {json.dumps(config, indent=2)}")
 
 print('inizializzo il modello')
-model = TransformerTranslation(
-    src_vocab_size=len(la_vocab),
-    tgt_vocab_size=len(en_vocab),
-    n_layers=config['n_layers'],
-    embed_dim=config['embed_dim'],
-    num_heads=config['num_heads'],
-    d_ff=config['d_ff'],
-    max_len=config['max_seq_length'],
-    dropout=config['dropout'],
-    use_nn_mha=True
-
-).to(device)
+model = TranslationModel(src_vocab_size=10000, tgt_vocab_size=10000).to(device)
+criterion = torch.nn.CrossEntropyLoss(ignore_index=0)  # ignora padding
+optimizer = torch.optim.Adam(model.parameters())
 print(model)
 
 total_params = sum(p.numel() for p in model.parameters())
@@ -103,9 +94,9 @@ print(f"Parametri totali: {total_params:,}")
 print(f"Parametri trainable: {trainable_params:,}")
 
 print('Inizializzo  Ottimizzatore e LossFunc')
-criterion = LabelSmoothingLoss(config['tgt_vocab_size'],
-                                  config['label_smoothing'], ignore_index=0)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, betas=(0.9, 0.98), eps=1e-9)
+# criterion = LabelSmoothingLoss(config['tgt_vocab_size'],
+#                                   config['label_smoothing'], ignore_index=0)
+# optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, betas=(0.9, 0.98), eps=1e-9)
 scheduler = NoamScheduler(optimizer, config['embed_dim'], config['warmup_steps'])
 
 print(f"Modello con {sum(p.numel() for p in model.parameters()):,} parametri")
@@ -124,11 +115,11 @@ for epoch in range(config['num_epochs']):
     print(f"\n--- Epoca {epoch+1}/{config['num_epochs']} ---")
 
     # Training
-    train_loss = train_epoch(model, train_dataloader, criterion, optimizer,
+    train_loss = train_epoch_transformers(model, train_dataloader, criterion, optimizer,
                             scheduler, device, epoch+1)
 
     # Validation
-    val_loss, val_perplexity = evaluate(model, val_dataloader, criterion, device)
+    val_loss, val_perplexity = evaluate_transformers(model, val_dataloader, criterion, device)
 
     print(f"Train Loss: {train_loss:.4f}")
     print(f"Val Loss: {val_loss:.4f}, Val Perplexity: {val_perplexity:.2f}")
